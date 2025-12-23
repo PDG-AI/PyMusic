@@ -34,7 +34,7 @@ MANAGING
 - Create // CL [list_name] [song_id1] [song_id2]...    -creates a list with the set songs
   - example: CL this_shit_works_so_fucking_bad 1 2 3 8 10
 - Edit // E [list_id] [add//remove] [song_id1] [song_id2]...    -edits the list to add or remove set songs
-  - example: 1L remove 1 4 10
+  - example: E 1L remove 1 4 10
 - Delete [song_id//list_id] [password]    -removes the song or list
 
 
