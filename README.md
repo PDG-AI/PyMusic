@@ -20,6 +20,17 @@ if py or pip doesnt work, try pip3 and python or python3
 if there is some problem, send feedback to the git repository
 
 
+HOW TO DOWNLOAD SONGS MANUALLY
+rn there is no automated way, just do it the old way, put the .mp3 files you have on the /songs folder, then on metadata.json add
+
+  "**file_name**": {
+    "title": "**song_name**",
+    "added_date": "**this is not important, just leave a random date, for example, 2025-09-11 09:37:27**"
+  },
+
+then you can add it to any list with the command, but instead of an ID, you have to add it with the file_name
+NOTE: you have follow json rules, so if it is the last song listed, dont put a "," at the end, but if there are more ahead of it put one 
+
 commands
 
 DOWNLOADING
