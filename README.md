@@ -21,17 +21,25 @@ if there is some problem, send feedback to the git repository
 
 
 HOW TO DOWNLOAD SONGS MANUALLY
-rn there is no automated way, just do it the old way, put the .mp3 files you have on the /songs folder, then on metadata.json add
+- NO LONGER RECOMMENDED
+i already added a adf ("ad"d song from "f"ile) command to the app on the 1.0 release, but if you got problems with that command, continue
+
+HOW TO?
+put the file you want on the /Songs folder (named as /A-Songs on the .exe version), then on the metadata.json put this information
 
   "**file_name**": {
     "title": "**song_name**",
     "added_date": "**this is not important, just leave a random date, for example, 2025-09-11 09:37:27**"
   },
 
+if you have named it as a number, for example 34.mp3 to continue the normal music structure, just change the number on counter.json to match the number AFTER the one on the file (35 in this case), its important as the code can get confused and give an error when reaching that number as it alr exists but the counter says it doenst
+
 then you can add it to any list with the command, but instead of an ID, you have to add it with the file_name
 NOTE: you have follow json rules, so if it is the last song listed, dont put a "," at the end, but if there are more ahead of it put one 
 
-commands
+
+
+# Commands
 
 DOWNLOADING
 - Download // D [YT link]    -downloads a YT song if its not private
