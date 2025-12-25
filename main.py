@@ -52,8 +52,11 @@ mixer = FakeMixer()
 
 class MusicPlayer:
     def __init__(self):
+        pygame.mixer.init()
         self.volume = DEFAULT_VOLUME
-        mixer.music.set_volume(self.volume)
+        pygame.mixer.music.set_volume(self.volume)
+        self.is_paused = False
+        self.paused_position = 0
         self.current_playlist = []
         self.current_song_index = 0
         self.played_songs = set()
@@ -110,7 +113,10 @@ class MusicPlayer:
             "showlist": self.show_list_content,
             "sl": self.show_list_content,
             "search": self.search_song,
-            "sch": self.search_song
+            "sch": self.search_song,
+            "adf": self.add_song_from_file,
+            "pause": self.toggle_pause,
+            "resume": self.resume_playback,
         }
         
         # Inicializar cliente de Spotify
@@ -186,7 +192,13 @@ class MusicPlayer:
         
     def process_command(self, command):
         try:
-            cmd, *args = command.lower().split()  # Convertir a minúsculas
+            if not command.strip():
+                return
+                
+            parts = command.lower().split()
+            cmd = parts[0]
+            args = parts[1:] if len(parts) > 1 else []
+            
             if cmd in self.commands:
                 return self.commands[cmd](*args)
             else:
@@ -198,29 +210,31 @@ class MusicPlayer:
 
     def show_help(self):
         print("""
-Comandos disponibles:
-- Download/D [url_youtube] - Descarga un video de YouTube como MP3
-- Download_Spotify/DS [url_playlist] - Descarga una playlist de Spotify
-- Create/CL [nombre_lista] [id1] [id2] ... - Crea una nueva lista
-  Ejemplo: Create MiLista 1 2 3 4 5
-- Edit/E [id_lista] add/remove [id1] [id2] ... - Edita una lista existente
-  Ejemplos: 
+available commands:
+- Download/D [url_youtube] - downloads a youtube video
+- Download_Spotify/DS [url_playlist] - downloads an spotify playlist (some songs may be unavailable on youtube)
+- Create/CL [list_name] [id1] [id2] ... - creates a new list
+  Ejemplo: Create ARandomList 1 2 5
+- Edit/E [list_id] add/remove [id1] [id2] ... - Edit an alr existing list
+  examples: 
   - Edit 1L add 6 7 8
   - Edit 1L remove 3 4
-- Delete/DEL [id_lista_o_cancion] [contraseña] - Elimina una lista o canción
-- Play/P [id_lista] - Reproduce una lista
-- Play_Song/PS [id_cancion] - Reproduce una canción específica
-- Lists/L - Muestra todas las listas de reproducción
-- Songs/SH - Muestra todas las canciones disponibles
-- ShowList/SL [id_lista] - Muestra el contenido detallado de una lista
-- Paste/PA - Pega y procesa automáticamente una URL del portapapeles
-- Volume/V [0-50] - Ajusta el volumen del reproductor (máximo 50%)
+- Delete/DEL [list_id // song_id] [password] - delete a song or list
+- Play/P [list_id] - plays a list
+- Play_Song/PS [song_id] - plays an specific song
+- Lists/L - shows all available lists
+- Songs/SH - shows all available songs
+- ShowList/SL [list_id] - shows a list's content
+- Paste/PA - Paste whathever link you have copied and download the song
+- Volume/V [0-300] - adjust volume (max 300% (i think max is actually 100))
 - Pass/NEXT/N - Pasa a la siguiente canción
-- Check/CH [id_lista] - Verifica la integridad de una lista
-- Stop/S - Detiene la reproducción actual
-- Cancel/C - Cancela la descarga actual
-- Help/H - Muestra esta ayuda
-- Search/Sch - busqueda por nombre en youtube
+- Check/CH [list_id] - verify list integrity
+- Stop/S - stop current playing song
+- Cancel/C - stops current download
+- Help/H - shows this 
+- Search/Sch - name search on youtube
+- ADF - add a song from a file
+- Pause/Resume - pause or resume the current song
         """)
 
     def show_lists(self):
@@ -550,6 +564,37 @@ Comandos disponibles:
             self.downloading = False
             self.cancel_download = False
 
+    def toggle_pause(self, *args):
+        """Pausa o reanuda la reproducción actual"""
+        if not self.is_playing:
+            print("No hay ninguna reproducción en curso")
+            return
+
+        if self.is_paused:
+            # Reanudar la reproducción desde la posición guardada
+            pygame.mixer.music.rewind()  # Rebobinar al inicio
+            pygame.mixer.music.set_pos(self.paused_position)  # Ir a la posición guardada
+            pygame.mixer.music.unpause()
+            self.is_paused = False
+            print(f"▶️  Reproducción reanudada en {int(self.paused_position)}s")
+        else:
+            # Pausar la reproducción guardando la posición actual
+            self.paused_position = pygame.mixer.music.get_pos() / 1000.0  # Guardar en segundos
+            pygame.mixer.music.pause()
+            self.is_paused = True
+            print(f"⏸️  Reproducción pausada en {int(self.paused_position)}s")
+
+    def resume_playback(self, *args):
+        """Reanuda la reproducción si está pausada"""
+        if not pygame.mixer.music.get_busy() and self.is_playing:
+            self.is_paused = True
+            pygame.mixer.music.unpause()
+            print("Reproducción reanudada")
+        elif not self.is_playing:
+            print("No hay ninguna reproducción en curso")
+        else:
+            print("La reproducción ya está en curso")
+
     def download_progress_hook(self, d):
         """Hook para mostrar el progreso de la descarga"""
         if d['status'] == 'downloading':
@@ -565,6 +610,81 @@ Comandos disponibles:
                 print(f"\rDescargando: {percentage:.1f}%", end='', flush=True)
         elif d['status'] == 'finished':
             print("\nDescarga completada, procesando...")
+
+    def add_song_from_file(self, file_path=None):
+        """Añade una canción desde un archivo local a la biblioteca"""
+        try:
+            if file_path is None:
+                print("Por favor, introduce la ruta completa del archivo de audio:")
+                file_path = input().strip('"')  # Eliminar comillas si el usuario las incluyó
+            # Verificar si el archivo existe
+            if not os.path.isfile(file_path):
+                print(f"Error: El archivo '{file_path}' no existe")
+                return None
+            # Obtener la extensión del archivo
+            _, ext = os.path.splitext(file_path)
+            ext = ext.lower()
+            # Verificar que sea un formato de audio soportado
+            if ext not in ['.mp3', '.wav', '.ogg', '.flac']:
+                print(f"Error: Formato de archivo no soportado: {ext}")
+                print("Formatos soportados: .mp3, .wav, .ogg, .flac")
+                return None
+            # Obtener el nombre del archivo sin la ruta
+            filename = os.path.basename(file_path)
+            
+            # Obtener el ID para la nueva canción
+            song_id = self.get_next_song_id()
+            
+            # Ruta de destino en la carpeta de canciones
+            dest_path = os.path.join(self.songs_dir, f"{song_id}{ext}")
+            
+            try:
+                # Copiar el archivo a la carpeta de canciones
+                import shutil
+                shutil.copy2(file_path, dest_path)
+                
+                # Si el archivo no es MP3, intentar convertirlo
+                if ext != '.mp3':
+                    try:
+                        import subprocess
+                        mp3_path = os.path.join(self.songs_dir, f"{song_id}.mp3")
+                        subprocess.run(['ffmpeg', '-i', dest_path, '-codec:a', 'libmp3lame', '-qscale:a', '2', mp3_path], 
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                        # Eliminar el archivo original si la conversión fue exitosa
+                        if os.path.exists(mp3_path):
+                            os.remove(dest_path)
+                            dest_path = mp3_path
+                    except Exception as e:
+                        print(f"Advertencia: No se pudo convertir a MP3: {e}")
+                
+                # Obtener metadatos del archivo
+                try:
+                    import mutagen
+                    audio = mutagen.File(dest_path, easy=True)
+                    title = audio.get('title', [f"Canción {song_id}"])[0]
+                    artist = audio.get('artist', ['Desconocido'])[0]
+                    album = audio.get('album', ['Desconocido'])[0]
+                    
+                    # Guardar metadatos
+                    self.save_song_metadata(song_id, f"{title} - {artist}")
+                    print(f"✓ Canción añadida: {title} - {artist} (ID: {song_id})")
+                except Exception as e:
+                    print(f"Advertencia: No se pudieron leer los metadatos: {e}")
+                    # Si no se pueden leer los metadatos, usar el nombre del archivo
+                    title = os.path.splitext(filename)[0]
+                    self.save_song_metadata(song_id, title)
+                    print(f"✓ Canción añadida: {title} (ID: {song_id})")
+                
+                return song_id
+                
+            except Exception as e:
+                print(f"Error al copiar el archivo: {e}")
+                return None
+                
+        except Exception as e:
+            print(f"Error inesperado: {e}")
+            return None
+
 
     def create_playlist(self, playlist_name, *songs):
         playlist_id = f"{len(os.listdir(self.lists_dir)) + 1}L"
@@ -663,8 +783,9 @@ Comandos disponibles:
     def check_song_end(self):
         """Verifica si la canción actual ha terminado y reproduce la siguiente"""
         while self.is_playing:
-            if not mixer.music.get_busy() and self.current_playlist:
-                self.play_next_song()
+            if self.is_paused == False:
+                if not pygame.mixer.music.get_busy() and self.current_playlist:
+                    self.play_next_song()
             time.sleep(1)  # Verificar cada segundo
 
     def play_next_song(self):
@@ -681,8 +802,8 @@ Comandos disponibles:
         self.played_songs.add(next_song)
         
         try:
-            mixer.music.load(os.path.join(self.songs_dir, f"{next_song}.mp3"))
-            mixer.music.play()
+            pygame.mixer.music.load(os.path.join(self.songs_dir, f"{next_song}.mp3"))
+            pygame.mixer.music.play()
             title = self.get_song_title(next_song)
             print(f"Reproduciendo: {title}")
         except Exception as e:
@@ -698,8 +819,8 @@ Comandos disponibles:
             
             # Iniciar reproducción
             self.is_playing = True
-            mixer.music.load(os.path.join(self.songs_dir, f"{song_id}.mp3"))
-            mixer.music.play()
+            pygame.mixer.music.load(os.path.join(self.songs_dir, f"{song_id}.mp3"))
+            pygame.mixer.music.play()
             title = self.get_song_title(song_id)
             print(f"Reproduciendo: {title}")
             
@@ -719,7 +840,7 @@ Comandos disponibles:
             volume = min(volume, 3.0)
             if 0 <= volume <= 3.0:
                 self.volume = volume
-                mixer.music.set_volume(volume)
+                pygame.mixer.music.set_volume(volume)
                 print(f"Volumen ajustado a {int(volume * 100)}%")
             else:
                 print("El volumen debe estar entre 0 y 50")
@@ -782,7 +903,7 @@ Comandos disponibles:
             self.is_playing = False
             if self.check_thread and self.check_thread.is_alive():
                 self.check_thread.join()
-            mixer.music.stop()
+            pygame.mixer.music.stop()
             self.current_playlist = []
             self.played_songs.clear()
             print("Reproducción detenida")
