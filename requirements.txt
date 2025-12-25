@@ -1,5 +1,4 @@
 # Core dependencies
-pygame==2.5.2
 pyperclip==1.8.2
 yt-dlp==2023.12.30
 spotipy==2.23.0
