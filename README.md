@@ -1,4 +1,4 @@
-# PyMusic
+# PyMusic 1.0 update
 A simple music reproducer based on terminal and commands, just a simple project, dont expect too much
 
 
@@ -44,10 +44,10 @@ NOTE: you have follow json rules, so if it is the last song listed, dont put a "
 DOWNLOADING
 - Download // D [YT link]    -downloads a YT song if its not private
 - **RECOMENDED**- Paste // P    -downloads from wathever link you have copied, works on spotify and YT
-- Download_spotify // DS [Spotify link]    -downloads any list // song from spotify
+- Download_spotify // DS [Spotify link]    -downloads any list // song from spotify               ----------- NEEDS TO HAVE config.py CONFIGURATED TO BE USED
 - Cancel // C    -cancels the current download
 - **BETA** - Search // sch    -searchs a song on youtube by name, with a - you can separate artist from song
-
+- ADF    -asks you for a directory, then imports that file into the system automatically
 
 MANAGING
 - Create // CL [list_name] [song_id1] [song_id2]...    -creates a list with the set songs
@@ -62,7 +62,9 @@ REPRODUCING
 - Play_song // PS [song_id]    -reproduces a song
 - Stop // S    -stops the current song
 - Pass // P // Next // N    -passes to the next song on the list
-
+- pause    -pause the reproduction, also unpauses it if its paused
+- resume    -forcefully resume the reproduction
+  
 
 KNOWLEDGE
 - Songs // SH    -shows all the songs with their song_id
@@ -73,12 +75,41 @@ KNOWLEDGE
 OTHERS
 - help    -shows help menu
 - volume // v    -changes volume from 0 to 300
+- check [list_id]    -checks if the list to see if all the songs are downloaded and ready to use
 
 
+-----------------------------------------------------------------------------------------------
+in the case i missed a command here is the help command :D :
+available commands:
+- Download/D [url_youtube] - downloads a youtube video
+- Download_Spotify/DS [url_playlist] - downloads an spotify playlist (some songs may be unavailable on youtube)
+- Create/CL [list_name] [id1] [id2] ... - creates a new list
+  Ejemplo: Create ARandomList 1 2 5
+- Edit/E [list_id] add/remove [id1] [id2] ... - Edit an alr existing list
+  examples:
+  - Edit 1L add 6 7 8
+  - Edit 1L remove 3 4
+- Delete/DEL [list_id // song_id] [password] - delete a song or list
+- Play/P [list_id] - plays a list
+- Play_Song/PS [song_id] - plays an specific song
+- Lists/L - shows all available lists
+- Songs/SH - shows all available songs
+- ShowList/SL [list_id] - shows a list's content
+- Paste/PA - Paste whathever link you have copied and download the song
+- Volume/V [0-300] - adjust volume (max 300% (i think max is actually 100))
+- Pass/NEXT/N - Pasa a la siguiente canción
+- Check/CH [list_id] - verify list integrity
+- Stop/S - stop current playing song
+- Cancel/C - stops current download
+- Help/H - shows this
+- Search/Sch - name search on youtube
+- ADF - add a song from a file
+- Pause/Resume - pause or resume the current song
+-----------------------------------------------------------------------------------
 
 
 -SIDE NOTES
 
 i made this shit over like 2 years, like one weekend, then i forget, and one month after that, i find it, so a lot of things dont make any f sense, like sometimes you need to use ID+L for list_id but sometimes just ID... idfc
 
-no ads or payment required, open source
+no ads or payment required, open source, stop using fuckify, i mean, spotify
