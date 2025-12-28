@@ -1035,9 +1035,10 @@ available commands:
 
 if __name__ == "__main__":
     player = MusicPlayer()
-    print("PyMusic - Reproductor de Música Local")
-    print("Escribe 'Help' para ver los comandos disponibles")
-    print("Consejo: Copia una URL de YouTube o Spotify y usa el comando 'Paste' para procesarla")
+    print("PyMusic - A local music reproducer, for free")
+    print("Write 'Help' too see ALL available commands")
+    print("Tip: copy any URL (youtube or spotify) and write Paste to process it and download that song automatically")
+    print("Remember, not all songs are available on youtube to download, unless you film them with OBS and export to .mp3......")
     
     while True:
         try:
