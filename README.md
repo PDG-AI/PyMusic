@@ -1,6 +1,8 @@
 # PyMusic 1.0 update
 A simple music reproducer based on terminal and commands, just a simple project, dont expect too much
 
+current version: 1.1.0-stats
+added some statistics shit so u can see how much time u have been damaging you ears and loosing your time on PyMusic
 
 -------------------------------------------------------------------------------------------------------
 
