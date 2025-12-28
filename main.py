@@ -11,6 +11,7 @@ from spotipy.oauth2 import SpotifyClientCredentials
 from password import ADMIN_PASSWORD
 from config import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, DEFAULT_VOLUME
 from downloader import SmartDownloader
+from user_stats import UserStats  # <-- Añade esta línea
 
 # Obtener la ruta base del proyecto
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -31,6 +32,7 @@ class MusicPlayer:
         self.is_playing = False
         self.downloading = False
         self.cancel_download = False
+        self.stats = UserStats()  # Inicializar estadísticas
         
         # Crear directorios necesarios
         self.songs_dir = os.path.join(BASE_DIR, "Songs")
@@ -84,6 +86,7 @@ class MusicPlayer:
             "adf": self.add_song_from_file,
             "pause": self.toggle_pause,
             "resume": self.resume_playback,
+            "stats": self.show_stats,
         }
         
         # Inicializar cliente de Spotify
@@ -202,6 +205,7 @@ available commands:
 - Search/Sch - name search on youtube
 - ADF - add a song from a file
 - Pause/Resume - pause or resume the current song
+- stats - shows your app stats
         """)
 
     def show_lists(self):
@@ -635,6 +639,7 @@ available commands:
                     # Guardar metadatos
                     self.save_song_metadata(song_id, f"{title} - {artist}")
                     print(f"✓ Canción añadida: {title} - {artist} (ID: {song_id})")
+                    self.stats.increment("songs_imported")
                 except Exception as e:
                     print(f"Advertencia: No se pudieron leer los metadatos: {e}")
                     # Si no se pueden leer los metadatos, usar el nombre del archivo
@@ -662,6 +667,7 @@ available commands:
         with open(os.path.join(self.lists_dir, f"{playlist_id}.json"), "w") as f:
             json.dump(playlist_data, f)
         print(f"Lista creada con ID: {playlist_id}")
+        self.stats.increment("playlists_created")
         return playlist_id
 
     def delete_playlist(self, item_id, password):
@@ -673,6 +679,7 @@ available commands:
             if item_id.endswith('L'):  # Es una lista
                 os.remove(os.path.join(self.lists_dir, f"{item_id}.json"))
                 print(f"Lista {item_id} eliminada")
+                self.stats.increment("playlists_deleted")
             else:  # Es una canción
                 # Eliminar el archivo MP3
                 mp3_path = os.path.join(self.songs_dir, f"{item_id}.mp3")
@@ -683,6 +690,7 @@ available commands:
                     # Eliminar de todas las listas
                     self.remove_song_from_playlists(item_id)
                     print(f"Canción {item_id} eliminada")
+                    self.stats.increment("songs_deleted")
                 else:
                     print(f"No se encontró la canción {item_id}")
             return True
@@ -772,6 +780,7 @@ available commands:
             pygame.mixer.music.load(os.path.join(self.songs_dir, f"{next_song}.mp3"))
             pygame.mixer.music.play()
             title = self.get_song_title(next_song)
+            self.stats.increment("songs_played")
             print(f"Reproduciendo: {title}")
         except Exception as e:
             print(f"Error al reproducir canción: {e}")
@@ -1019,6 +1028,10 @@ available commands:
         except Exception as e:
             print(f"Error al mostrar la lista: {e}")
             return False
+            
+    def show_stats(self, *args):
+        """Muestra las estadísticas del usuario."""
+        print(self.stats.get_formatted_stats())
 
 if __name__ == "__main__":
     player = MusicPlayer()
