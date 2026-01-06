@@ -34,11 +34,12 @@ class MusicPlayer:
         self.cancel_download = False
         self.stats = UserStats()  # Inicializar estadísticas
         
-        # Información para Streamlabs
+        # Información para Streamlabs e integraciones
         self.current_song_id = None
         self.current_song_title = None
         self.current_song_duration = 0
         self.current_playlist_name = None
+        self.integration_manager = None  # Se inicializará en __main__
         
         # Crear directorios necesarios
         self.songs_dir = os.path.join(BASE_DIR, "Songs")
@@ -570,12 +571,18 @@ available commands:
             pygame.mixer.music.unpause()
             self.is_paused = False
             print(f"▶️  Reproducción reanudada en {int(self.paused_position)}s")
+            # Disparar evento
+            if self.integration_manager:
+                self.integration_manager.trigger_event('playback_resumed')
         else:
             # Pausar la reproducción guardando la posición actual
             self.paused_position = pygame.mixer.music.get_pos() / 1000.0  # Guardar en segundos
             pygame.mixer.music.pause()
             self.is_paused = True
             print(f"⏸️  Reproducción pausada en {int(self.paused_position)}s")
+            # Disparar evento
+            if self.integration_manager:
+                self.integration_manager.trigger_event('playback_paused')
 
     def resume_playback(self, *args):
         """Reanuda la reproducción si está pausada"""
@@ -756,10 +763,18 @@ available commands:
             with open(os.path.join(self.lists_dir, f"{playlist_id}.json"), "r") as f:
                 playlist = json.load(f)
             
+            old_playlist_name = self.current_playlist_name
             self.current_playlist = playlist["songs"]
             self.current_playlist_name = playlist["name"]
             self.played_songs = set()
             print(f"Reproduciendo lista: {playlist['name']}")
+            
+            # Disparar evento de cambio de playlist
+            if self.integration_manager and old_playlist_name != playlist["name"]:
+                self.integration_manager.trigger_event('playlist_changed', {
+                    'playlist_id': playlist_id,
+                    'playlist_name': playlist["name"]
+                })
             
             # Detener el hilo anterior si existe
             self.is_playing = False
@@ -805,13 +820,24 @@ available commands:
             title = self.get_song_title(next_song)
             duration = self.get_song_duration(next_song)
             
-            # Actualizar información para Streamlabs
+            # Actualizar información para Streamlabs e integraciones
+            old_song_id = self.current_song_id
             self.current_song_id = next_song
             self.current_song_title = title
             self.current_song_duration = duration
             
             self.stats.increment("songs_played")
             print(f"Reproduciendo: {title}")
+            
+            # Disparar evento de cambio de canción
+            if self.integration_manager and old_song_id != next_song:
+                self.integration_manager.trigger_event('song_changed', {
+                    'song_id': next_song,
+                    'song_title': title,
+                    'duration': duration
+                })
+                if not old_song_id:  # Primera canción
+                    self.integration_manager.trigger_event('playback_started')
         except Exception as e:
             print(f"Error al reproducir canción: {e}")
             self.is_playing = False
@@ -830,13 +856,23 @@ available commands:
             title = self.get_song_title(song_id)
             duration = self.get_song_duration(song_id)
             
-            # Actualizar información para Streamlabs
+            # Actualizar información para Streamlabs e integraciones
+            old_song_id = self.current_song_id
             self.current_song_id = song_id
             self.current_song_title = title
             self.current_song_duration = duration
             self.current_playlist_name = None  # No hay playlist cuando se reproduce una canción individual
             
             print(f"Reproduciendo: {title}")
+            
+            # Disparar evento de cambio de canción
+            if self.integration_manager and old_song_id != song_id:
+                self.integration_manager.trigger_event('song_changed', {
+                    'song_id': song_id,
+                    'song_title': title,
+                    'duration': duration
+                })
+                self.integration_manager.trigger_event('playback_started')
             
             # Iniciar el hilo de verificación
             self.check_thread = threading.Thread(target=self.check_song_end)
@@ -921,6 +957,9 @@ available commands:
             self.current_playlist = []
             self.played_songs.clear()
             print("Reproducción detenida")
+            # Disparar evento
+            if self.integration_manager:
+                self.integration_manager.trigger_event('playback_stopped')
         except Exception as e:
             print(f"Error al detener la reproducción: {e}")
 
@@ -1078,15 +1117,26 @@ if __name__ == "__main__":
     print("Tip: copy any URL (youtube or spotify) and write Paste to process it and download that song automatically")
     print("Remember, not all songs are available on youtube to download, unless you film them with OBS and export to .mp3......")
     
+    # Inicializar sistema de integraciones
+    try:
+        from integrations.integration_base import IntegrationManager
+        integration_manager = IntegrationManager(player)
+        player.integration_manager = integration_manager
+        integration_manager.load_integrations()
+        print(f"\n✓ Sistema de integraciones cargado ({len(integration_manager._integrations)} integraciones)")
+    except Exception as e:
+        print(f"\n⚠ Advertencia: No se pudo cargar el sistema de integraciones: {e}")
+        player.integration_manager = None
+    
     # Iniciar servidor Streamlabs en un hilo separado
     try:
         from integrations.streamlabs.server import start_server
         streamlabs_thread = threading.Thread(target=start_server, args=(player, 8765), daemon=True)
         streamlabs_thread.start()
-        print("\n✓ Servidor Streamlabs iniciado en http://localhost:8765")
+        print("✓ Servidor Streamlabs iniciado en http://localhost:8765")
         print("  Accede al overlay en: http://localhost:8765/")
     except Exception as e:
-        print(f"\n⚠ Advertencia: No se pudo iniciar el servidor Streamlabs: {e}")
+        print(f"⚠ Advertencia: No se pudo iniciar el servidor Streamlabs: {e}")
     
     while True:
         try:
