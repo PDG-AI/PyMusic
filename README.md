@@ -1,8 +1,11 @@
 # PyMusic 1.0 update
 A simple music reproducer based on terminal and commands, just a simple project, dont expect too much
 
-current version: 1.1.0-stats
+previous version: 1.1.0-stats
 added some statistics shit so u can see how much time u have been damaging you ears and loosing your time on PyMusic
+
+current version: 1.2.0-integrations_beta
+added the base for the future integrations functions, you will be able to connect PyMusic to other apps such as Discord and OBS, the only one working right now is the integrated StreamLabs integration (wtf was that phrase?) wich sends the current song and list playing to a server wich you can put on Streamlabs with that navigator or explorer shit, MAY also work on OBS, not tested, server SHOULD be http://localhost:8765
 
 -------------------------------------------------------------------------------------------------------
 
