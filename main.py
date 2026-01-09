@@ -94,6 +94,10 @@ class MusicPlayer:
             "pause": self.toggle_pause,
             "resume": self.resume_playback,
             "stats": self.show_stats,
+            "rename_song": self.rename_song,
+            "rs": self.rename_song,
+            "rename_list": self.rename_playlist,
+            "rl": self.rename_playlist,
         }
         
         # Inicializar cliente de Spotify
@@ -124,16 +128,100 @@ class MusicPlayer:
         print(f"Buscando: {song_name} {artist_name} {album_name}")
         
         # Usar el SmartDownloader para buscar y descargar
-        song_id = self.downloader.download_by_name(
+        video_id = self.downloader.download_by_name(
             song_name=song_name,
             artist_name=artist_name,
             album_name=album_name
         )
         
-        if song_id:
-            print(f"✓ Canción descargada exitosamente con ID: {song_id}")
+        if video_id:
+            # Obtener nuevo ID y renombrar el archivo
+            new_id = self.get_next_song_id()
+            
+            # Buscar el archivo descargado (puede tener diferentes nombres/formats)
+            old_path = None
+            
+            # Si es de fuente alternativa, el ID tiene prefijo "alt_"
+            if video_id.startswith("alt_"):
+                # Buscar archivos que empiecen con el ID sin el prefijo
+                base_id = video_id.replace("alt_", "")
+                for file in os.listdir(self.songs_dir):
+                    if file.startswith(base_id) or file.startswith(f"jamendo_{base_id}") or file.startswith(f"{base_id}_"):
+                        old_path = os.path.join(self.songs_dir, file)
+                        break
+            else:
+                # Buscar archivos normales de YouTube/yt-dlp
+                possible_paths = [
+                    os.path.join(self.songs_dir, f"{video_id}.mp3"),
+                    os.path.join(self.songs_dir, f"{video_id}.m4a"),
+                    os.path.join(self.songs_dir, f"{video_id}.webm"),
+                ]
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        old_path = path
+                        break
+                
+                # Buscar archivos que empiecen con el ID
+                if not old_path:
+                    for file in os.listdir(self.songs_dir):
+                        if file.startswith(str(video_id)) or file.startswith(f"jamendo_{video_id}") or file.startswith(f"{video_id}_"):
+                            old_path = os.path.join(self.songs_dir, file)
+                            break
+            
+            # Si no se encuentra, buscar cualquier archivo nuevo (último recurso)
+            if not old_path:
+                try:
+                    files = [(f, os.path.getmtime(os.path.join(self.songs_dir, f))) 
+                            for f in os.listdir(self.songs_dir) 
+                            if f.endswith(('.mp3', '.m4a', '.flac', '.ogg', '.webm')) and not f.startswith('counter')]
+                    if files:
+                        files.sort(key=lambda x: x[1], reverse=True)
+                        # Tomar el más reciente (probablemente el que acabamos de descargar)
+                        old_path = os.path.join(self.songs_dir, files[0][0])
+                except:
+                    pass
+            
+            if old_path and os.path.exists(old_path):
+                # Convertir a MP3 si es necesario
+                if not old_path.endswith('.mp3'):
+                    try:
+                        import subprocess
+                        mp3_path = os.path.join(self.songs_dir, f"{new_id}.mp3")
+                        subprocess.run([
+                            'ffmpeg', '-i', old_path, '-codec:a', 'libmp3lame',
+                            '-qscale:a', '2', mp3_path
+                        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                        os.remove(old_path)
+                        old_path = mp3_path
+                    except:
+                        # Si la conversión falla, renombrar con la extensión original
+                        ext = os.path.splitext(old_path)[1]
+                        new_path = os.path.join(self.songs_dir, f"{new_id}{ext}")
+                        os.rename(old_path, new_path)
+                        # Guardar metadatos
+                        title = f"{song_name}"
+                        if artist_name:
+                            title = f"{song_name} - {artist_name}"
+                        self.save_song_metadata(new_id, title)
+                        print(f"✓ Canción descargada exitosamente con ID: {new_id}")
+                        return new_id
+                
+                # Renombrar a MP3
+                new_path = os.path.join(self.songs_dir, f"{new_id}.mp3")
+                os.rename(old_path, new_path)
+                # Guardar metadatos
+                title = f"{song_name}"
+                if artist_name:
+                    title = f"{song_name} - {artist_name}"
+                self.save_song_metadata(new_id, title)
+                print(f"✓ Canción descargada exitosamente con ID: {new_id}")
+                return new_id
+            else:
+                print("Error: Archivo descargado no encontrado")
+                return None
         else:
             print("No se pudo descargar la canción")
+            return None
 
     def print_progress(self, current, total):
         """Imprime una barra de progreso y el porcentaje"""
@@ -210,9 +298,11 @@ available commands:
 - Cancel/C - stops current download
 - Help/H - shows this 
 - Search/Sch - name search on youtube
-- ADF - add a song from a file
+- ADF - add songs from a file, folder, or ZIP archive (supports MP3, WAV, OGG, FLAC, M4A, AAC, WMA, OPUS, WEBM)
 - Pause/Resume - pause or resume the current song
 - stats - shows your app stats
+- Rename_Song/RS [song_id] [new_name] - rename a song
+- Rename_List/RL [list_id] [new_name] - rename a playlist
         """)
 
     def show_lists(self):
@@ -390,18 +480,27 @@ available commands:
                     print(f"\n[{i}/{total_tracks}] Buscando: {song_name} - {artist}")
                     
                     # Usar el SmartDownloader para buscar y descargar
-                    song_id = self.downloader.download_by_name(
+                    video_id = self.downloader.download_by_name(
                         song_name=song_name,
                         artist_name=artist,
                         album_name=album
                     )
                     
-                    if song_id:
-                        # Guardar metadatos con el título de Spotify
-                        title = f"{song_name} - {artist}"
-                        self.save_song_metadata(song_id, title)
-                        downloaded_songs.append(song_id)
-                        print(f"✓ Descargada: {title}")
+                    if video_id:
+                        # Obtener nuevo ID y renombrar el archivo
+                        new_id = self.get_next_song_id()
+                        old_path = os.path.join(self.songs_dir, f"{video_id}.mp3")
+                        new_path = os.path.join(self.songs_dir, f"{new_id}.mp3")
+                        
+                        if os.path.exists(old_path):
+                            os.rename(old_path, new_path)
+                            # Guardar metadatos con el título de Spotify
+                            title = f"{song_name} - {artist}"
+                            self.save_song_metadata(new_id, title)
+                            downloaded_songs.append(new_id)
+                            print(f"✓ Descargada: {title}")
+                        else:
+                            print(f"Error: Archivo descargado no encontrado para: {song_name} - {artist}")
                     else:
                         print(f"No se pudo descargar: {song_name} - {artist}")
                         
@@ -514,43 +613,173 @@ available commands:
             self.downloading = True
             self.cancel_download = False
             
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
-                'outtmpl': os.path.join(self.songs_dir, '%(id)s.%(ext)s'),
-                'quiet': True,
-                'no_warnings': True,
-                'progress_hooks': [self.download_progress_hook],
-            }
+            cookies_path = os.path.join(BASE_DIR, 'cookies.txt')
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url, download=True)
-                if self.cancel_download:
-                    print("Descarga cancelada")
-                    # Eliminar archivo parcial si existe
-                    try:
-                        os.remove(os.path.join(self.songs_dir, f"{info['id']}.mp3"))
-                    except:
-                        pass
-                    return None
-                
-                # Obtener nuevo ID y renombrar el archivo
-                new_id = self.get_next_song_id()
-                old_path = os.path.join(self.songs_dir, f"{info['id']}.mp3")
-                new_path = os.path.join(self.songs_dir, f"{new_id}.mp3")
-                os.rename(old_path, new_path)
-                
-                # Guardar metadatos con el título del video
-                title = info.get('title', f'Video {info["id"]}')
-                self.save_song_metadata(new_id, title)
-                print(f"Canción descargada con ID: {new_id}")
-                print(f"Título: {title}")
-                time.sleep(1)
-                return new_id
+            # Estrategias de descarga (en orden de preferencia)
+            strategies = [
+                {
+                    'name': 'Android + Web',
+                    'opts': {
+                        'format': 'bestaudio/best',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                        'outtmpl': os.path.join(self.songs_dir, '%(id)s.%(ext)s'),
+                        'quiet': True,
+                        'no_warnings': True,
+                        'progress_hooks': [self.download_progress_hook],
+                        'cookiefile': cookies_path if os.path.exists(cookies_path) else None,
+                        'extractor_args': {
+                            'youtube': {
+                                'player_client': ['android', 'web'],
+                                'player_skip': ['webpage', 'configs'],
+                            }
+                        },
+                        'user_agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip',
+                        'referer': 'https://www.youtube.com/',
+                        'noplaylist': True,
+                    }
+                },
+                {
+                    'name': 'iOS Client',
+                    'opts': {
+                        'format': 'bestaudio/best',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                        'outtmpl': os.path.join(self.songs_dir, '%(id)s.%(ext)s'),
+                        'quiet': True,
+                        'no_warnings': True,
+                        'progress_hooks': [self.download_progress_hook],
+                        'cookiefile': cookies_path if os.path.exists(cookies_path) else None,
+                        'extractor_args': {
+                            'youtube': {
+                                'player_client': ['ios'],
+                            }
+                        },
+                        'user_agent': 'com.google.ios.youtube/19.09.3 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)',
+                        'referer': 'https://www.youtube.com/',
+                        'noplaylist': True,
+                    }
+                },
+                {
+                    'name': 'TV Client',
+                    'opts': {
+                        'format': 'bestaudio/best',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                        'outtmpl': os.path.join(self.songs_dir, '%(id)s.%(ext)s'),
+                        'quiet': True,
+                        'no_warnings': True,
+                        'progress_hooks': [self.download_progress_hook],
+                        'cookiefile': cookies_path if os.path.exists(cookies_path) else None,
+                        'extractor_args': {
+                            'youtube': {
+                                'player_client': ['tv_embedded', 'android'],
+                            }
+                        },
+                        'user_agent': 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
+                        'referer': 'https://www.youtube.com/tv',
+                        'noplaylist': True,
+                    }
+                },
+                {
+                    'name': 'Cualquier formato',
+                    'opts': {
+                        'format': 'worstaudio/worst',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                        'outtmpl': os.path.join(self.songs_dir, '%(id)s.%(ext)s'),
+                        'quiet': True,
+                        'no_warnings': True,
+                        'progress_hooks': [self.download_progress_hook],
+                        'cookiefile': cookies_path if os.path.exists(cookies_path) else None,
+                        'extractor_args': {
+                            'youtube': {
+                                'player_client': ['mweb', 'android'],
+                            }
+                        },
+                        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)',
+                        'referer': 'https://m.youtube.com/',
+                        'noplaylist': True,
+                    }
+                },
+            ]
+            
+            # Intentar cada estrategia
+            for i, strategy in enumerate(strategies, 1):
+                try:
+                    if i > 1:
+                        print(f"Intentando estrategia alternativa {i}: {strategy['name']}...")
+                    
+                    with yt_dlp.YoutubeDL(strategy['opts']) as ydl:
+                        info = ydl.extract_info(video_url, download=True)
+                        
+                        if self.cancel_download:
+                            print("Descarga cancelada")
+                            try:
+                                os.remove(os.path.join(self.songs_dir, f"{info['id']}.mp3"))
+                            except:
+                                pass
+                            return None
+                        
+                        # Obtener nuevo ID y renombrar el archivo
+                        new_id = self.get_next_song_id()
+                        old_path = os.path.join(self.songs_dir, f"{info['id']}.mp3")
+                        new_path = os.path.join(self.songs_dir, f"{new_id}.mp3")
+                        
+                        # Verificar si el archivo existe (puede tener otra extensión)
+                        if not os.path.exists(old_path):
+                            for ext in ['m4a', 'webm', 'opus']:
+                                alt_old = os.path.join(self.songs_dir, f"{info['id']}.{ext}")
+                                if os.path.exists(alt_old):
+                                    old_path = alt_old
+                                    # Convertir a MP3
+                                    try:
+                                        import subprocess
+                                        subprocess.run([
+                                            'ffmpeg', '-i', alt_old, '-codec:a', 'libmp3lame',
+                                            '-qscale:a', '2', new_path
+                                        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+                                        os.remove(alt_old)
+                                        # Guardar metadatos
+                                        title = info.get('title', f'Video {info["id"]}')
+                                        self.save_song_metadata(new_id, title)
+                                        print(f"Canción descargada con ID: {new_id}")
+                                        print(f"Título: {title}")
+                                        time.sleep(1)
+                                        return new_id
+                                    except:
+                                        pass
+                        
+                        if os.path.exists(old_path):
+                            os.rename(old_path, new_path)
+                            # Guardar metadatos con el título del video
+                            title = info.get('title', f'Video {info["id"]}')
+                            self.save_song_metadata(new_id, title)
+                            print(f"Canción descargada con ID: {new_id}")
+                            print(f"Título: {title}")
+                            time.sleep(1)
+                            return new_id
+                        else:
+                            raise Exception("Archivo descargado no encontrado")
+                            
+                except Exception as e:
+                    if i < len(strategies):
+                        continue  # Intentar siguiente estrategia
+                    else:
+                        print(f"Error: Todas las estrategias fallaron. Último error: {e}")
+                        return None
         except Exception as e:
             print(f"Error al descargar video: {e}")
             return None
@@ -612,79 +841,222 @@ available commands:
             print("\nDescarga completada, procesando...")
 
     def add_song_from_file(self, file_path=None):
-        """Añade una canción desde un archivo local a la biblioteca"""
+        """Añade canciones desde un archivo, carpeta o ZIP a la biblioteca"""
         try:
             if file_path is None:
-                print("Por favor, introduce la ruta completa del archivo de audio:")
+                print("Por favor, introduce la ruta completa del archivo/carpeta/ZIP de audio:")
                 file_path = input().strip('"')  # Eliminar comillas si el usuario las incluyó
-            # Verificar si el archivo existe
-            if not os.path.isfile(file_path):
-                print(f"Error: El archivo '{file_path}' no existe")
+            
+            # Verificar si existe
+            if not os.path.exists(file_path):
+                print(f"Error: La ruta '{file_path}' no existe")
                 return None
-            # Obtener la extensión del archivo
-            _, ext = os.path.splitext(file_path)
-            ext = ext.lower()
-            # Verificar que sea un formato de audio soportado
-            if ext not in ['.mp3', '.wav', '.ogg', '.flac']:
-                print(f"Error: Formato de archivo no soportado: {ext}")
-                print("Formatos soportados: .mp3, .wav, .ogg, .flac")
-                return None
-            # Obtener el nombre del archivo sin la ruta
-            filename = os.path.basename(file_path)
             
-            # Obtener el ID para la nueva canción
-            song_id = self.get_next_song_id()
-            
-            # Ruta de destino en la carpeta de canciones
-            dest_path = os.path.join(self.songs_dir, f"{song_id}{ext}")
-            
-            try:
-                # Copiar el archivo a la carpeta de canciones
-                import shutil
-                shutil.copy2(file_path, dest_path)
+            # Detectar si es archivo, carpeta o ZIP
+            if os.path.isfile(file_path):
+                _, ext = os.path.splitext(file_path)
+                ext = ext.lower()
                 
-                # Si el archivo no es MP3, intentar convertirlo
-                if ext != '.mp3':
-                    try:
-                        import subprocess
-                        mp3_path = os.path.join(self.songs_dir, f"{song_id}.mp3")
-                        subprocess.run(['ffmpeg', '-i', dest_path, '-codec:a', 'libmp3lame', '-qscale:a', '2', mp3_path], 
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        # Eliminar el archivo original si la conversión fue exitosa
-                        if os.path.exists(mp3_path):
-                            os.remove(dest_path)
-                            dest_path = mp3_path
-                    except Exception as e:
-                        print(f"Advertencia: No se pudo convertir a MP3: {e}")
-                
-                # Obtener metadatos del archivo
-                try:
-                    import mutagen
-                    audio = mutagen.File(dest_path, easy=True)
-                    title = audio.get('title', [f"Canción {song_id}"])[0]
-                    artist = audio.get('artist', ['Desconocido'])[0]
-                    album = audio.get('album', ['Desconocido'])[0]
-                    
-                    # Guardar metadatos
-                    self.save_song_metadata(song_id, f"{title} - {artist}")
-                    print(f"✓ Canción añadida: {title} - {artist} (ID: {song_id})")
-                    self.stats.increment("songs_imported")
-                except Exception as e:
-                    print(f"Advertencia: No se pudieron leer los metadatos: {e}")
-                    # Si no se pueden leer los metadatos, usar el nombre del archivo
-                    title = os.path.splitext(filename)[0]
-                    self.save_song_metadata(song_id, title)
-                    print(f"✓ Canción añadida: {title} (ID: {song_id})")
-                
-                return song_id
-                
-            except Exception as e:
-                print(f"Error al copiar el archivo: {e}")
+                if ext == '.zip':
+                    # Procesar archivo ZIP
+                    return self._import_from_zip(file_path)
+                else:
+                    # Procesar archivo individual
+                    return self._import_single_file(file_path)
+            elif os.path.isdir(file_path):
+                # Procesar carpeta
+                return self._import_from_folder(file_path)
+            else:
+                print(f"Error: La ruta '{file_path}' no es válida")
                 return None
                 
         except Exception as e:
             print(f"Error inesperado: {e}")
             return None
+    
+    def _import_single_file(self, file_path):
+        """Importa un archivo individual de audio"""
+        import shutil
+        import subprocess
+        
+        # Formatos de audio soportados (PyGame soporta MP3, OGG, WAV principalmente)
+        audio_extensions = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma', '.opus', '.webm']
+        
+        # Obtener la extensión del archivo
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower()
+        
+        # Verificar que sea un formato de audio soportado
+        if ext not in audio_extensions:
+            print(f"Error: Formato de archivo no soportado: {ext}")
+            print(f"Formatos soportados: {', '.join(audio_extensions)}")
+            return None
+        
+        # Obtener el nombre del archivo sin la ruta y sin extensión (usar como título)
+        filename = os.path.basename(file_path)
+        song_title = os.path.splitext(filename)[0]
+        
+        # Obtener el ID para la nueva canción
+        song_id = self.get_next_song_id()
+        
+        # Ruta de destino en la carpeta de canciones (siempre MP3)
+        mp3_path = os.path.join(self.songs_dir, f"{song_id}.mp3")
+        
+        try:
+            # Si ya es MP3, copiar directamente
+            if ext == '.mp3':
+                shutil.copy2(file_path, mp3_path)
+            else:
+                # Convertir a MP3 usando ffmpeg
+                print(f"Convirtiendo {filename} a MP3...")
+                try:
+                    result = subprocess.run(
+                        ['ffmpeg', '-i', file_path, '-codec:a', 'libmp3lame', 
+                         '-qscale:a', '2', '-y', mp3_path],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=True
+                    )
+                except subprocess.CalledProcessError as e:
+                    print(f"Error al convertir a MP3: {e.stderr.decode('utf-8', errors='ignore')}")
+                    return None
+                except FileNotFoundError:
+                    print("Error: ffmpeg no está instalado. Por favor, instala ffmpeg para convertir archivos.")
+                    return None
+            
+            # Guardar metadatos usando el nombre del archivo como título
+            self.save_song_metadata(song_id, song_title)
+            print(f"✓ Canción añadida: {song_title} (ID: {song_id})")
+            self.stats.increment("songs_imported")
+            
+            return song_id
+            
+        except Exception as e:
+            print(f"Error al procesar el archivo: {e}")
+            
+            return None
+                
+    def _import_from_folder(self, folder_path):
+        """Importa todos los archivos de audio de una carpeta"""
+        import shutil
+        import subprocess
+        
+        audio_extensions = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma', '.opus', '.webm']
+        
+        # Buscar todos los archivos de audio en la carpeta
+        audio_files = []
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                _, ext = os.path.splitext(file)
+                if ext.lower() in audio_extensions:
+                    audio_files.append(os.path.join(root, file))
+        
+        if not audio_files:
+            print(f"No se encontraron archivos de audio en la carpeta: {folder_path}")
+            return None
+        
+        print(f"Se encontraron {len(audio_files)} archivos de audio. Importando...")
+        
+        imported_songs = []
+        failed_songs = []
+        
+        for i, file_path in enumerate(audio_files, 1):
+            filename = os.path.basename(file_path)
+            print(f"[{i}/{len(audio_files)}] Procesando: {filename}")
+            
+            song_id = self._import_single_file(file_path)
+            if song_id:
+                imported_songs.append(song_id)
+            else:
+                failed_songs.append(filename)
+        
+        print(f"\n✓ Importación completada:")
+        print(f"  - {len(imported_songs)} canciones importadas exitosamente")
+        if failed_songs:
+            print(f"  - {len(failed_songs)} canciones fallaron:")
+            for song in failed_songs:
+                print(f"    - {song}")
+        
+        # Crear lista de reproducción automáticamente si hay más de una canción
+        if len(imported_songs) > 1:
+            folder_name = os.path.basename(os.path.normpath(folder_path))
+            playlist_id = self.create_playlist(f"Importado: {folder_name}", *imported_songs)
+            print(f"\n✓ Lista de reproducción creada automáticamente: {playlist_id}")
+        
+        return imported_songs if imported_songs else None
+    
+    def _import_from_zip(self, zip_path):
+        """Importa archivos de audio desde un archivo ZIP"""
+        import zipfile
+        import tempfile
+        import shutil
+        import subprocess
+        
+        audio_extensions = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma', '.opus', '.webm']
+        
+        # Crear directorio temporal para extraer el ZIP
+        temp_dir = tempfile.mkdtemp()
+        
+        try:
+            # Extraer el ZIP
+            print(f"Extrayendo archivo ZIP: {os.path.basename(zip_path)}")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+            
+            # Buscar todos los archivos de audio en el ZIP extraído
+            audio_files = []
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    _, ext = os.path.splitext(file)
+                    if ext.lower() in audio_extensions:
+                        audio_files.append(os.path.join(root, file))
+            
+            if not audio_files:
+                print("No se encontraron archivos de audio en el ZIP")
+                return None
+            
+            print(f"Se encontraron {len(audio_files)} archivos de audio en el ZIP. Importando...")
+            
+            imported_songs = []
+            failed_songs = []
+            
+            for i, file_path in enumerate(audio_files, 1):
+                filename = os.path.basename(file_path)
+                print(f"[{i}/{len(audio_files)}] Procesando: {filename}")
+                
+                song_id = self._import_single_file(file_path)
+                if song_id:
+                    imported_songs.append(song_id)
+                else:
+                    failed_songs.append(filename)
+            
+            print(f"\n✓ Importación desde ZIP completada:")
+            print(f"  - {len(imported_songs)} canciones importadas exitosamente")
+            if failed_songs:
+                print(f"  - {len(failed_songs)} canciones fallaron:")
+                for song in failed_songs:
+                    print(f"    - {song}")
+            
+            # Crear lista de reproducción automáticamente si hay más de una canción
+            if len(imported_songs) > 1:
+                zip_name = os.path.splitext(os.path.basename(zip_path))[0]
+                playlist_id = self.create_playlist(f"Importado: {zip_name}", *imported_songs)
+                print(f"\n✓ Lista de reproducción creada automáticamente: {playlist_id}")
+            
+            return imported_songs if imported_songs else None
+            
+        except zipfile.BadZipFile:
+            print(f"Error: El archivo '{zip_path}' no es un archivo ZIP válido")
+            return None
+        except Exception as e:
+            print(f"Error al procesar el archivo ZIP: {e}")
+            return None
+        finally:
+            # Limpiar directorio temporal
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                pass
 
 
     def create_playlist(self, playlist_name, *songs):
@@ -781,9 +1153,15 @@ available commands:
             if self.check_thread and self.check_thread.is_alive():
                 self.check_thread.join()
             
+            # Detener cualquier reproducción actual
+            pygame.mixer.music.stop()
+            
             # Iniciar reproducción
             self.is_playing = True
             self.play_next_song()
+            
+            # Esperar un momento para que la canción empiece a reproducirse
+            time.sleep(0.5)
             
             # Iniciar el hilo de verificación
             self.check_thread = threading.Thread(target=self.check_song_end)
@@ -795,6 +1173,8 @@ available commands:
 
     def check_song_end(self):
         """Verifica si la canción actual ha terminado y reproduce la siguiente"""
+        # Esperar un momento antes de empezar a verificar para evitar llamadas duplicadas
+        time.sleep(2)
         while self.is_playing:
             if self.is_paused == False:
                 if not pygame.mixer.music.get_busy() and self.current_playlist:
@@ -815,6 +1195,8 @@ available commands:
         self.played_songs.add(next_song)
         
         try:
+            # Detener cualquier reproducción actual antes de cargar una nueva canción
+            pygame.mixer.music.stop()
             pygame.mixer.music.load(os.path.join(self.songs_dir, f"{next_song}.mp3"))
             pygame.mixer.music.play()
             title = self.get_song_title(next_song)
@@ -848,6 +1230,9 @@ available commands:
             self.is_playing = False
             if self.check_thread and self.check_thread.is_alive():
                 self.check_thread.join()
+            
+            # Detener cualquier reproducción actual
+            pygame.mixer.music.stop()
             
             # Iniciar reproducción
             self.is_playing = True
@@ -1109,6 +1494,98 @@ available commands:
     def show_stats(self, *args):
         """Muestra las estadísticas del usuario."""
         print(self.stats.get_formatted_stats())
+    
+    def rename_song(self, song_id, *new_name_parts):
+        """Renombra una canción cambiando su título en los metadatos"""
+        try:
+            if not song_id:
+                print("Uso: rename_song <song_id> <nuevo_nombre>")
+                print("Ejemplo: rename_song 1 Mi Canción Favorita")
+                return False
+            
+            # Unir todas las partes del nuevo nombre
+            new_name = " ".join(new_name_parts) if new_name_parts else None
+            
+            if not new_name:
+                print("Error: Debes proporcionar un nuevo nombre para la canción")
+                print("Uso: rename_song <song_id> <nuevo_nombre>")
+                return False
+            
+            # Verificar que la canción existe
+            song_path = os.path.join(self.songs_dir, f"{song_id}.mp3")
+            if not os.path.exists(song_path):
+                print(f"Error: La canción con ID {song_id} no existe")
+                return False
+            
+            # Obtener el título actual
+            old_title = self.get_song_title(song_id)
+            
+            # Actualizar los metadatos
+            self.save_song_metadata(song_id, new_name)
+            
+            print(f"✓ Canción renombrada exitosamente:")
+            print(f"  Antes: {old_title}")
+            print(f"  Ahora: {new_name}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error al renombrar la canción: {e}")
+            return False
+    
+    def rename_playlist(self, playlist_id, *new_name_parts):
+        """Renombra una lista de reproducción"""
+        try:
+            if not playlist_id:
+                print("Uso: rename_list <list_id> <nuevo_nombre>")
+                print("Ejemplo: rename_list 1L Mi Playlist Favorita")
+                return False
+            
+            # Asegurar que el ID termine en 'L'
+            if not playlist_id.endswith('L'):
+                playlist_id = f"{playlist_id}L"
+            
+            # Unir todas las partes del nuevo nombre
+            new_name = " ".join(new_name_parts) if new_name_parts else None
+            
+            if not new_name:
+                print("Error: Debes proporcionar un nuevo nombre para la lista")
+                print("Uso: rename_list <list_id> <nuevo_nombre>")
+                return False
+            
+            # Verificar que la lista existe
+            playlist_path = os.path.join(self.lists_dir, f"{playlist_id}.json")
+            if not os.path.exists(playlist_path):
+                print(f"Error: La lista con ID {playlist_id} no existe")
+                return False
+            
+            # Cargar la lista
+            with open(playlist_path, 'r', encoding='utf-8') as f:
+                playlist = json.load(f)
+            
+            # Obtener el nombre anterior
+            old_name = playlist.get('name', 'Sin nombre')
+            
+            # Actualizar el nombre
+            playlist['name'] = new_name
+            
+            # Guardar la lista actualizada
+            with open(playlist_path, 'w', encoding='utf-8') as f:
+                json.dump(playlist, f, ensure_ascii=False, indent=2)
+            
+            print(f"✓ Lista renombrada exitosamente:")
+            print(f"  Antes: {old_name}")
+            print(f"  Ahora: {new_name}")
+            
+            # Actualizar el nombre actual si esta lista está siendo reproducida
+            if self.current_playlist_name == old_name:
+                self.current_playlist_name = new_name
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error al renombrar la lista: {e}")
+            return False
 
 if __name__ == "__main__":
     player = MusicPlayer()
